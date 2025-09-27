@@ -59,13 +59,16 @@ class CallbackHandler:
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         elif action == "settings":
-            settings = context.user_data.get("qr_settings", {"fmt": "PNG", "size": 10, "fg": "black", "bg": "white"})
-            keyboard = [
-                [InlineKeyboardButton(f"📄 Формат: {settings['fmt']}", callback_data="setting:format"), InlineKeyboardButton(f"📏 Розмір: {settings['size']}", callback_data="setting:size")],
-                [InlineKeyboardButton(f"🎨 Колір: {settings['fg']}", callback_data="setting:fg_color"), InlineKeyboardButton(f"🎨 Фон: {settings['bg']}", callback_data="setting:bg_color")],
-                [InlineKeyboardButton("♻️ Скинути", callback_data="setting:reset"), InlineKeyboardButton("✅ Готово", callback_data="action:main")]
-            ]
-            await query.edit_message_text("🔧 Налаштування QR коду:", reply_markup=InlineKeyboardMarkup(keyboard))
+            # Always use the latest settings from context.user_data
+            settings = context.user_data.get("qr_settings")
+            if settings is None:
+                from constants import DEFAULT_QR_SETTINGS
+                settings = DEFAULT_QR_SETTINGS.copy()
+            from keyboards.inline import InlineKeyboards
+            await query.edit_message_text(
+                "🔧 Налаштування QR коду:",
+                reply_markup=InlineKeyboards.settings_menu(settings)
+            )
         elif action == "templates":
             keyboard = [
                 [InlineKeyboardButton("📶 WiFi", callback_data="template:wifi"), InlineKeyboardButton("👤 Контакт", callback_data="template:contact")],
@@ -92,7 +95,7 @@ class CallbackHandler:
     
     @staticmethod
     async def _handle_template(query, context, template: str):
-        """Обробка template callbacks"""
+        """Обробка template callbacks через TemplatesHandler"""
         if template == "wifi":
             await TemplatesHandler.handle_wifi_template(query, context)
         elif template == "contact":
@@ -109,64 +112,26 @@ class CallbackHandler:
 
     @staticmethod
     async def _handle_setting(query, context, setting):
-        """Обробка вибору налаштування QR коду"""
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-        settings = context.user_data.get("qr_settings", {"fmt": "PNG", "size": 10, "fg": "black", "bg": "white"})
+        """Делегуємо обробку налаштувань у SettingsHandler"""
         if setting == "format":
-            keyboard = [
-                [InlineKeyboardButton("PNG", callback_data="set:fmt:PNG"), InlineKeyboardButton("SVG", callback_data="set:fmt:SVG")],
-                [InlineKeyboardButton("⬅️ Назад", callback_data="action:settings")]
-            ]
-            await query.edit_message_text("📄 Оберіть формат:", reply_markup=InlineKeyboardMarkup(keyboard))
+            await SettingsHandler.handle_format_setting(query, context)
         elif setting == "size":
-            keyboard = [
-                [InlineKeyboardButton("10", callback_data="set:size:10"), InlineKeyboardButton("15", callback_data="set:size:15")],
-                [InlineKeyboardButton("20", callback_data="set:size:20")],
-                [InlineKeyboardButton("⬅️ Назад", callback_data="action:settings")]
-            ]
-            await query.edit_message_text("📏 Оберіть розмір:", reply_markup=InlineKeyboardMarkup(keyboard))
+            await SettingsHandler.handle_size_setting(query, context)
         elif setting == "fg_color":
-            keyboard = [
-                [InlineKeyboardButton("Чорний", callback_data="set:fg:black"), InlineKeyboardButton("Синій", callback_data="set:fg:blue")],
-                [InlineKeyboardButton("Зелений", callback_data="set:fg:green"), InlineKeyboardButton("Червоний", callback_data="set:fg:red")],
-                [InlineKeyboardButton("⬅️ Назад", callback_data="action:settings")]
-            ]
-            await query.edit_message_text("🎨 Оберіть колір QR:", reply_markup=InlineKeyboardMarkup(keyboard))
+            await SettingsHandler.handle_fg_color_setting(query, context)
         elif setting == "bg_color":
-            keyboard = [
-                [InlineKeyboardButton("Білий", callback_data="set:bg:white"), InlineKeyboardButton("Жовтий", callback_data="set:bg:yellow")],
-                [InlineKeyboardButton("Сірий", callback_data="set:bg:gray"), InlineKeyboardButton("Зелений", callback_data="set:bg:green")],
-                [InlineKeyboardButton("⬅️ Назад", callback_data="action:settings")]
-            ]
-            await query.edit_message_text("🎨 Оберіть фон QR:", reply_markup=InlineKeyboardMarkup(keyboard))
+            await SettingsHandler.handle_bg_color_setting(query, context)
         elif setting == "reset":
             context.user_data["qr_settings"] = {"fmt": "PNG", "size": 10, "fg": "black", "bg": "white"}
-            # Показати головне меню після скидання
             await CallbackHandler._handle_action(query, context, "main")
 
     @staticmethod
     async def _handle_set_value(query, context, data):
-        """Обробка встановлення значення налаштування QR коду"""
-        # data: set:key:value
+        """Делегуємо встановлення значення у SettingsHandler"""
         parts = data.split(":")
         if len(parts) == 3:
             key, value = parts[1], parts[2]
-            settings = context.user_data.get("qr_settings", {"fmt": "PNG", "size": 10, "fg": "black", "bg": "white"})
-            # Мапінг ключів для кольорів
-            if key == "fg":
-                settings["fg"] = value
-            elif key == "bg":
-                settings["bg"] = value
-            elif key == "fmt":
-                settings["fmt"] = value
-            elif key == "size":
-                try:
-                    settings["size"] = int(value)
-                except ValueError:
-                    settings["size"] = 10
-            context.user_data["qr_settings"] = settings
-            # Показати меню налаштувань після зміни
-            await CallbackHandler._handle_action(query, context, "settings")
+            await SettingsHandler.set_setting_value(query, context, key, value)
         else:
             await query.edit_message_text("❌ Некоректний формат даних для налаштування.", reply_markup=None)
     
