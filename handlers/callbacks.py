@@ -9,7 +9,12 @@ import aiohttp
 import logging
 from keyboards.inline import InlineKeyboards
 from states.user_states import UserState
-
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    filename="bot.log",  # Шлях до файлу логів
+    filemode="a"         # Додає до файлу, не перезаписує
+)
 logger = logging.getLogger(__name__)
 
 class CallbackHandler:
@@ -111,8 +116,7 @@ class CallbackHandler:
 
     @staticmethod
     async def _show_history(query, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Показ історії QR-кодів через API."""
-        user_id = context.user_data.get("user_id", query.from_user.id)
+        user_id = context.user_data.get("user_id", query.from_user.id)  # Це telegram_id
         http_session: aiohttp.ClientSession = context.bot_data["http_session"]
         try:
             async with http_session.get(

@@ -61,29 +61,44 @@ class UserRepository:
 
 class QRRepository:
     @staticmethod
-    async def save_qr_code(user_id: int, text_content: str, settings: dict, db: AsyncSession = None):
+    async def save_qr_code(telegram_id: int, text_content: str, settings: dict, db: AsyncSession = None):
         if db is None:
             async with AsyncSessionLocal() as session:
-                return await QRRepository.save_qr_code(user_id, text_content, settings, session)
-        qr_code = QRCode(
-            user_id=user_id,
-            text_content=text_content,
-            format=settings["fmt"],
-            size=settings["size"],
-            fg_color=settings["fg"],
-            bg_color=settings["bg"]
-        )
-        db.add(qr_code)
-        await db.commit()
-        await db.refresh(qr_code)
-        # Оновлюємо лічильник QR-кодів для користувача
-        stmt = select(User).where(User.id == user_id)
-        result = await db.execute(stmt)
-        user = result.scalar_one_or_none()
-        if user:
-            user.qr_count += 1
+                qr_code = QRCode(
+                    user_id=telegram_id,
+                    text_content=text_content,
+                    format=settings["fmt"],
+                    size=settings["size"],
+                    fg_color=settings["fg"],
+                    bg_color=settings["bg"]
+                )
+                session.add(qr_code)
+                stmt = select(User).where(User.telegram_id == telegram_id)
+                result = await session.execute(stmt)
+                user = result.scalar_one_or_none()
+                if user:
+                    user.qr_count += 1
+                await session.commit()
+                await session.refresh(qr_code)
+                return qr_code
+        else:
+            qr_code = QRCode(
+                user_id=telegram_id,
+                text_content=text_content,
+                format=settings["fmt"],
+                size=settings["size"],
+                fg_color=settings["fg"],
+                bg_color=settings["bg"]
+            )
+            db.add(qr_code)
+            stmt = select(User).where(User.telegram_id == telegram_id)
+            result = await db.execute(stmt)
+            user = result.scalar_one_or_none()
+            if user:
+                user.qr_count += 1
             await db.commit()
-        return qr_code
+            await db.refresh(qr_code)
+            return qr_code
     
     @staticmethod
     async def get_user_history(user_id: int, limit: int = 10, db: AsyncSession = None) -> List[QRCode]:

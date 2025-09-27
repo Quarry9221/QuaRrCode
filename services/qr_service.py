@@ -1,3 +1,4 @@
+# У qr_service.py
 import aiohttp
 import qrcode
 from qrcode.image.svg import SvgImage
@@ -6,7 +7,8 @@ from dataclasses import dataclass
 from typing import Literal, Optional
 import logging
 from core.validators import ContentTypeDetector
-from config import settings  # Імпортуємо settings із config.py
+from config import settings as config_settings  # Перейменовано для уникнення конфлікту
+from database.repository import QRRepository, UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +47,7 @@ class QRService:
 
             if http_session:
                 # Спроба генерації через FastAPI
-                headers = {"X-API-Key": settings.api_key}  # Беремо api_key із config.py
+                headers = {"X-API-Key": config_settings.api_key}
                 data = {
                     "user_id": user_id,
                     "text_content": text,
@@ -54,8 +56,8 @@ class QRService:
                     "fg_color": fg_color,
                     "bg_color": bg_color
                 }
-                logger.info(f"Sending request to {settings.api_url}/qr_codes/ with data: {data}")
-                async with http_session.post(f"{settings.api_url}/qr_codes/", json=data, headers=headers) as response:
+                logger.info(f"Sending request to {config_settings.api_url}/qr_codes/ with data: {data}")
+                async with http_session.post(f"{config_settings.api_url}/qr_codes/", json=data, headers=headers) as response:
                     if response.status == 200:
                         qr_file = BytesIO(await response.read())
                         qr_file.name = f"qr.{fmt.lower()}"
@@ -87,16 +89,6 @@ class QRService:
                           bg_color: str = "white", fmt: Literal["PNG", "SVG"] = "PNG") -> BytesIO:
         """
         Внутрішній метод генерації QR зображення локально
-        
-        Args:
-            text: Текст для QR коду
-            size: Розмір блоку
-            fg_color: Колір переднього плану
-            bg_color: Колір фону
-            fmt: Формат (PNG або SVG)
-            
-        Returns:
-            BytesIO: Файл з QR кодом
         """
         qr = qrcode.QRCode(
             version=1,
@@ -125,37 +117,47 @@ class QRService:
         return bio
     
     @staticmethod
-    async def save_to_history(user_id: int, text: str, settings: dict):
-        """
-        Зберігає QR код в історію користувача через FastAPI або локально
-        
-        Args:
-            user_id: ID користувача
-            text: Текст QR коду
-            settings: Налаштування QR коду
-        """
+    async def save_to_history(telegram_id: int, text: str, settings: dict):
         try:
-            logger.info(f"Saving QR to history for user {user_id}: {text[:50]}...")
+            logger.info(f"Saving QR to history for user {telegram_id}: {text[:50]}...")
             http_session = settings.get("http_session")
+            db_session = settings.get("db_session")
             if http_session:
-                headers = {"X-API-Key": settings.api_key}
+                headers = {"X-API-Key": config_settings.api_key}
                 data = {
-                    "user_id": user_id,
+                    "user_id": telegram_id,
                     "text_content": text,
                     "format": settings.get("fmt", "PNG"),
                     "size": settings.get("size", 10),
                     "fg_color": settings.get("fg", "black"),
                     "bg_color": settings.get("bg", "white")
                 }
-                async with http_session.post(f"{settings.api_url}/qr_codes/", json=data, headers=headers) as response:
+                async with http_session.post(f"{config_settings.api_url}/qr_codes/", json=data, headers=headers) as response:
                     if response.status != 200:
-                        logger.error(f"Failed to save QR to history: {response.status}")
+                        logger.error(f"Failed to save QR to history via API: {response.status}")
+                        if db_session:
+                            # Забезпечуємо існування користувача перед збереженням QR
+                            await UserRepository.get_or_create_user(
+                                telegram_id=telegram_id,
+                                username=settings.get("username"),
+                                first_name=settings.get("first_name"),
+                                db=db_session
+                            )
+                            await QRRepository.save_qr_code(telegram_id, text, settings, db=db_session)
+                        else:
+                            logger.error("No db_session provided for local QR save")
             else:
-                try:
-                    from database.repository import QRRepository, UserRepository
-                    await QRRepository.save_qr_code(user_id, text, settings)
-                    await UserRepository.increment_qr_count(user_id)
-                except ImportError:
-                    logger.warning("Database repositories not available, skipping history save")
+                if db_session:
+                    # Забезпечуємо існування користувача перед збереженням QR
+                    await UserRepository.get_or_create_user(
+                        telegram_id=telegram_id,
+                        username=settings.get("username"),
+                        first_name=settings.get("first_name"),
+                        db=db_session
+                    )
+                    await QRRepository.save_qr_code(telegram_id, text, settings, db=db_session)
+                else:
+                    logger.error("No db_session provided for local QR save")
         except Exception as e:
             logger.error(f"Error saving QR to history: {e}")
+            raise

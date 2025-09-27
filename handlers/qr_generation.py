@@ -1,9 +1,11 @@
+# У qr_generation.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from handlers.base import BaseHandler
 from states.user_states import UserState
 from services.qr_service import QRService
 from core.validators import TextValidator
+from database.repository import AsyncSessionLocal
 import logging
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,9 @@ class QRGenerationHandler(BaseHandler):
                 "size": 10, 
                 "fg": "black",
                 "bg": "white",
-                "user_id": context.user_data.get("user_id", update.effective_user.id)
+                "user_id": context.user_data.get("user_id", update.effective_user.id),
+                "http_session": context.bot_data.get("http_session"),
+                "db_session": context.bot_data.get("db_session")  # Додаємо db_session
             })
             
             logger.info(f"Generating QR with settings: {settings}")
@@ -69,7 +73,10 @@ class QRGenerationHandler(BaseHandler):
             
             # Збереження в історію
             user_id = context.user_data.get("user_id", update.effective_user.id)
-            await QRService.save_to_history(user_id, text, settings)
+                
+            async with AsyncSessionLocal() as db_session:
+                    settings["db_session"] = db_session
+                    await QRService.save_to_history(user_id, text, settings)
             
             # Повернення в головне меню
             QRGenerationHandler.set_user_state(context, UserState.MAIN_MENU)
