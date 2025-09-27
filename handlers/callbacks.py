@@ -1,20 +1,24 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import ContextTypes
+from telegram.error import BadRequest, NetworkError
 from handlers.templates import TemplatesHandler
 from handlers.settings import SettingsHandler
-from states.user_states import UserState
+from handlers.base import BaseHandler
+from config import settings
+import aiohttp
 import logging
-
+from keyboards.inline import InlineKeyboards
+from states.user_states import UserState
 
 logger = logging.getLogger(__name__)
 
 class CallbackHandler:
     @staticmethod
-    async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Центральний обробник всіх callback queries"""
+    async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Центральний обробник всіх callback queries."""
         query = update.callback_query
         await query.answer()
-        data = query.data
+        data: str = query.data
         
         logger.info(f"Callback received: {data}")
         
@@ -26,164 +30,136 @@ class CallbackHandler:
             elif data.startswith("setting:"):
                 await CallbackHandler._handle_setting(query, context, data.split(":")[1])
             elif data.startswith("set:"):
-                await CallbackHandler._handle_set_value(query, context, data)
+                await SettingsHandler.set_setting_value(query, context, data.split(":")[1], data.split(":")[2])
+        except BadRequest as e:
+            logger.error(f"Telegram API error: {e}")
+            await query.edit_message_text("❌ Помилка Telegram API. Спробуйте ще раз.")
+        except NetworkError as e:
+            logger.error(f"Network error: {e}")
+            await query.edit_message_text("🌐 Проблеми з мережею. Спробуйте пізніше.")
         except Exception as e:
-            logger.exception(f"Error handling callback: {data}")
-            await query.edit_message_text("❌ Сталася помилка. Спробуйте ще раз.")
+            logger.exception(f"Unexpected error handling callback: {data}")
+            await query.edit_message_text("❌ Сталася неочікувана помилка. Спробуйте ще раз.")
 
     @staticmethod
-    async def _handle_action(query, context, action):
-        """Обробка дій callback action"""
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-        from states.user_states import UserState
-        # Головне меню
-        if action == "main":
-            CallbackHandler._set_user_state(context, UserState.MAIN_MENU)
-            keyboard = [
-                [InlineKeyboardButton("📱 Генерувати QR", callback_data="action:generate")],
-                [InlineKeyboardButton("🔧 Налаштування", callback_data="action:settings")],
-                [InlineKeyboardButton("📋 Шаблони", callback_data="action:templates")],
-                [InlineKeyboardButton("ℹ️ Допомога", callback_data="action:help")]
-            ]
-            await query.edit_message_text("🤖 Головне меню:", reply_markup=InlineKeyboardMarkup(keyboard))
-        elif action == "generate":
-            CallbackHandler._set_user_state(context, UserState.WAITING_TEXT)
-            keyboard = [
-                [InlineKeyboardButton("📶 WiFi", callback_data="template:wifi"), InlineKeyboardButton("👤 Контакт", callback_data="template:contact")],
-                [InlineKeyboardButton("📧 Email", callback_data="template:email"), InlineKeyboardButton("📞 Телефон", callback_data="template:phone")],
-                [InlineKeyboardButton("🌐 URL", callback_data="template:url")],
-                [InlineKeyboardButton("⬅️ Назад", callback_data="action:main")]
-            ]
-            await query.edit_message_text(
+    async def _handle_action(query, context: ContextTypes.DEFAULT_TYPE, action: str) -> None:
+        """Обробка дій callback action."""
+        async def generate_handler(q, c):
+            BaseHandler.set_user_state(c, UserState.WAITING_TEXT)
+            await q.edit_message_text(
                 "✏️ Надішліть текст або посилання для створення QR коду:\n\nАбо оберіть шаблон:",
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=InlineKeyboards.templates_menu()
             )
-        elif action == "settings":
-            # Always use the latest settings from context.user_data
-            settings = context.user_data.get("qr_settings")
-            if settings is None:
-                from constants import DEFAULT_QR_SETTINGS
-                settings = DEFAULT_QR_SETTINGS.copy()
-            from keyboards.inline import InlineKeyboards
-            await query.edit_message_text(
-                "🔧 Налаштування QR коду:",
-                reply_markup=InlineKeyboards.settings_menu(settings)
-            )
-        elif action == "templates":
-            keyboard = [
-                [InlineKeyboardButton("📶 WiFi", callback_data="template:wifi"), InlineKeyboardButton("👤 Контакт", callback_data="template:contact")],
-                [InlineKeyboardButton("📧 Email", callback_data="template:email"), InlineKeyboardButton("📞 Телефон", callback_data="template:phone")],
-                [InlineKeyboardButton("🌐 URL", callback_data="template:url")],
-                [InlineKeyboardButton("⬅️ Назад", callback_data="action:main")]
-            ]
-            await query.edit_message_text("📋 Оберіть шаблон:", reply_markup=InlineKeyboardMarkup(keyboard))
-        elif action == "help":
-            text = (
-                "ℹ️ Довідка по QR Bot:\n\n"
-                "🔹 Генерувати QR - створення QR коду з тексту\n"
-                "🔹 Шаблони - готові шаблони для WiFi, контактів тощо\n"
-                "🔹 Налаштування - зміна розміру, кольорів, формату\n"
-                "🔹 Статистика - ваша статистика використання\n"
-                "🔹 Історія - останні створені QR коди\n\n"
-                "📱 Підтримувані формати: PNG, SVG\n"
-                "🎨 Різні кольори та розміри\n"
-                "📊 Автовизначення типу контенту\n\n"
-                "💡 Просто надішліть текст після натискання 'Генерувати QR'!"
-            )
-            keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data="action:main")]]
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    
-    @staticmethod
-    async def _handle_template(query, context, template: str):
-        """Обробка template callbacks через TemplatesHandler"""
-        if template == "wifi":
-            await TemplatesHandler.handle_wifi_template(query, context)
-        elif template == "contact":
-            await TemplatesHandler.handle_contact_template(query, context)
-        elif template == "email":
-            CallbackHandler._set_user_state(context, UserState.WAITING_EMAIL)
-            await query.edit_message_text("📧 Введіть email адресу:")
-        elif template == "url":
-            CallbackHandler._set_user_state(context, UserState.WAITING_URL)
-            await query.edit_message_text("🌐 Введіть URL:")
-        elif template == "phone":
-            CallbackHandler._set_user_state(context, UserState.WAITING_TEXT)
-            await query.edit_message_text("📞 Введіть номер телефону:")
 
-    @staticmethod
-    async def _handle_setting(query, context, setting):
-        """Делегуємо обробку налаштувань у SettingsHandler"""
-        if setting == "format":
-            await SettingsHandler.handle_format_setting(query, context)
-        elif setting == "size":
-            await SettingsHandler.handle_size_setting(query, context)
-        elif setting == "fg_color":
-            await SettingsHandler.handle_fg_color_setting(query, context)
-        elif setting == "bg_color":
-            await SettingsHandler.handle_bg_color_setting(query, context)
-        elif setting == "reset":
-            context.user_data["qr_settings"] = {"fmt": "PNG", "size": 10, "fg": "black", "bg": "white"}
-            await CallbackHandler._handle_action(query, context, "main")
-
-    @staticmethod
-    async def _handle_set_value(query, context, data):
-        """Делегуємо встановлення значення у SettingsHandler"""
-        parts = data.split(":")
-        if len(parts) == 3:
-            key, value = parts[1], parts[2]
-            await SettingsHandler.set_setting_value(query, context, key, value)
+        actions = {
+            "main": lambda q, c: q.edit_message_text("🤖 Головне меню:", reply_markup=InlineKeyboards.main_menu()),
+            "generate": generate_handler,
+            "settings": SettingsHandler.show_settings,
+            "templates": lambda q, c: q.edit_message_text("📋 Оберіть шаблон:", reply_markup=InlineKeyboards.templates_menu()),
+            "help": lambda q, c: q.edit_message_text(
+                (
+                    "ℹ️ Довідка по QR Bot:\n\n"
+                    "🔹 Генерувати QR - створення QR коду з тексту\n"
+                    "🔹 Шаблони - готові шаблони для WiFi, контактів тощо\n"
+                    "🔹 Налаштування - зміна розміру, кольорів, формату\n"
+                    "🔹 Статистика - ваша статистика використання\n"
+                    "🔹 Історія - останні створені QR коди\n\n"
+                    "📱 Підтримувані формати: PNG, SVG\n"
+                    "🎨 Різні кольори та розміри\n"
+                    "📊 Автовизначення типу контенту\n\n"
+                    "💡 Просто надішліть текст після натискання 'Генерувати QR'!"
+                ),
+                reply_markup=InlineKeyboards.back_to_main()
+            ),
+            "stats": CallbackHandler._show_stats,
+            "history": CallbackHandler._show_history
+        }
+        handler = actions.get(action)
+        if handler:
+            # If handler is a coroutine function, await it; else, call it directly
+            if hasattr(handler, "__call__") and hasattr(handler, "__code__") and handler.__code__.co_flags & 0x80:
+                await handler(query, context)
+            else:
+                await handler(query, context)
         else:
-            await query.edit_message_text("❌ Некоректний формат даних для налаштування.", reply_markup=None)
-    
-    @staticmethod
-    def _set_user_state(context: ContextTypes.DEFAULT_TYPE, state: UserState):
-        """Допоміжний метод для встановлення стану"""
-        context.user_data["state"] = state.value
+            await query.edit_message_text("❌ Невідома дія.")
 
     @staticmethod
-    async def _show_stats(query, context):
-        """Показ статистики користувача"""
-        from database.repository import UserRepository
+    async def _show_stats(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Показ статистики користувача через API."""
         user = query.from_user
-        stats = UserRepository.get_user_stats(user.id)
-        text = (
-            f"📊 Ваша статистика:\n\n"
-            f"👤 Ім'я: {user.first_name or 'Невідоме'}\n"
-            f"🔢 Створено QR кодів: {stats['total_qr_codes']}\n"
-            f"📅 Учасник з: {stats['member_since']}"
-        )
-        keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data="action:main")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        http_session: aiohttp.ClientSession = context.bot_data["http_session"]
+        try:
+            async with http_session.get(
+                f"{settings.api_url}/users/{user.id}/stats",
+                headers={"X-API-Key": settings.api_key}
+            ) as response:
+                if response.status == 200:
+                    stats = await response.json()
+                    text = (
+                        f"📊 Ваша статистика:\n\n"
+                        f"👤 Ім'я: {user.first_name or 'Невідоме'}\n"
+                        f"🔢 Створено QR кодів: {stats['total_qr_codes']}\n"
+                        f"📅 Учасник з: {stats['member_since']}"
+                    )
+                    await query.edit_message_text(text, reply_markup=InlineKeyboards.back_to_main())
+                else:
+                    await query.edit_message_text("❌ Не вдалося отримати статистику.")
+        except aiohttp.ClientError as e:
+            logger.error(f"API request failed: {e}")
+            await query.edit_message_text("🌐 Помилка зв’язку з сервером. Спробуйте пізніше.")
 
     @staticmethod
-    async def _show_history(query, context):
-        """Показ історії QR кодів"""
-        from database.repository import QRRepository
+    async def _show_history(query, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Показ історії QR-кодів через API."""
         user_id = context.user_data.get("user_id", query.from_user.id)
-        history = QRRepository.get_user_history(user_id, limit=5)
-        if history:
-            text = "📜 Останні QR коди:\n\n" + "\n".join([f"{i+1}. {item['text'][:50]}..." for i, item in enumerate(history)])
-        else:
-            text = "ℹ️ Історія порожня."
-        keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data="action:main")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        http_session: aiohttp.ClientSession = context.bot_data["http_session"]
+        try:
+            async with http_session.get(
+                f"{settings.api_url}/qr_codes/{user_id}/history?limit=5",
+                headers={"X-API-Key": settings.api_key}
+            ) as response:
+                if response.status == 200:
+                    history = await response.json()
+                    text = "📜 Останні QR коди:\n\n" + (
+                        "\n".join([f"{i+1}. {item['text_content'][:50]}..." for i, item in enumerate(history)])
+                        if history else "ℹ️ Історія порожня."
+                    )
+                    await query.edit_message_text(text, reply_markup=InlineKeyboards.back_to_main())
+                else:
+                    await query.edit_message_text("❌ Не вдалося отримати історію.")
+        except aiohttp.ClientError as e:
+            logger.error(f"API request failed: {e}")
+            await query.edit_message_text("🌐 Помилка зв’язку з сервером. Спробуйте пізніше.")
 
     @staticmethod
-    async def _show_help(query, context):
-        """Показ допомоги"""
-        text = (
-            "ℹ️ Довідка по QR Bot:\n\n"
-            "🔹 Генерувати QR - створення QR коду з тексту\n"
-            "🔹 Шаблони - готові шаблони для WiFi, контактів тощо\n"
-            "🔹 Налаштування - зміна розміру, кольорів, формату\n"
-            "🔹 Статистика - ваша статистика використання\n"
-            "🔹 Історія - останні створені QR коди\n\n"
-            "📱 Підтримувані формати: PNG, SVG\n"
-            "🎨 Різні кольори та розміри\n"
-            "📊 Автовизначення типу контенту\n\n"
-            "💡 Просто надішліть текст після натискання 'Генерувати QR'!"
-        )
-        keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data="action:main")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    async def _handle_template(query, context: ContextTypes.DEFAULT_TYPE, template: str) -> None:
+        """Обробка template callbacks через TemplatesHandler."""
+        template_handlers = {
+            "wifi": TemplatesHandler.handle_wifi_template,
+            "contact": TemplatesHandler.handle_contact_template,
+            "email": TemplatesHandler.handle_email_template_selection,
+            "url": TemplatesHandler.handle_url_template_selection,
+            "phone": TemplatesHandler.handle_phone_template_selection
+        }
+        handler = template_handlers.get(template)
+        if handler:
+            await handler(query, context)
+        else:
+            await query.edit_message_text("❌ Невідомий шаблон.")
 
-    
+    @staticmethod
+    async def _handle_setting(query, context: ContextTypes.DEFAULT_TYPE, setting: str) -> None:
+        """Обробка налаштувань через SettingsHandler."""
+        setting_handlers = {
+            "format": SettingsHandler.handle_format_setting,
+            "size": SettingsHandler.handle_size_setting,
+            "fg_color": SettingsHandler.handle_fg_color_setting,
+            "bg_color": SettingsHandler.handle_bg_color_setting,
+            "reset": SettingsHandler.reset_settings
+        }
+        handler = setting_handlers.get(setting)
+        if handler:
+            await handler(query, context)
+        else:
+            await query.edit_message_text("❌ Невідоме налаштування.")

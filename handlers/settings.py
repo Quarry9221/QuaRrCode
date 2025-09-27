@@ -108,3 +108,9 @@ class SettingsHandler(BaseHandler):
             f"✅ {key.upper()} встановлено: {value}",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+    @staticmethod
+    async def reset_settings(query, context):
+        context.user_data["qr_settings"] = DEFAULT_QR_SETTINGS.copy()
+        await query.edit_message_text(
+            "✅ Налаштування скинуто до стандартних",
+            reply_markup=InlineKeyboards.settings_menu(DEFAULT_QR_SETTINGS))

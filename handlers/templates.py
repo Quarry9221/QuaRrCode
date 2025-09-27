@@ -143,3 +143,20 @@ class TemplatesHandler(BaseHandler):
         
         # Передаємо на генерацію
         await QRGenerationHandler._process_qr_generation(update, context, url)
+
+
+
+    @staticmethod
+    async def handle_email_template_selection(query, context):
+        TemplatesHandler.set_user_state(context, UserState.WAITING_EMAIL)
+        await query.edit_message_text("📧 Введіть email адресу:")
+
+    @staticmethod
+    async def handle_url_template_selection(query, context):
+        TemplatesHandler.set_user_state(context, UserState.WAITING_URL)
+        await query.edit_message_text("🌐 Введіть URL:")
+
+    @staticmethod
+    async def handle_phone_template_selection(query, context):
+        TemplatesHandler.set_user_state(context, UserState.WAITING_TEXT)
+        await query.edit_message_text("📞 Введіть номер телефону:")

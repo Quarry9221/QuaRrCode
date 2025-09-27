@@ -19,7 +19,7 @@ class QRGenerationHandler(BaseHandler):
         
         logger.info(f"Processing text input in state: {state}")
         
-        if state == UserState.WAITING_TEXT:
+        if state == UserState.WAITING_TEXT or state == UserState.WAITING_PHONE:
             await QRGenerationHandler._process_qr_generation(update, context, text)
         else:
             await QRGenerationHandler._show_main_menu(update, context)
@@ -45,7 +45,8 @@ class QRGenerationHandler(BaseHandler):
                 "fmt": "PNG",
                 "size": 10, 
                 "fg": "black",
-                "bg": "white"
+                "bg": "white",
+                "user_id": context.user_data.get("user_id", update.effective_user.id)
             })
             
             logger.info(f"Generating QR with settings: {settings}")
