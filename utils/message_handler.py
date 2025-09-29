@@ -7,10 +7,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class MessageRouter:
-    """Роутер для обробки текстових повідомлень на основі стану користувача."""
 
-    # Мапінг станів на хендлери
+class MessageRouter:
+
     STATE_HANDLERS = {
         UserState.WAITING_TEXT: QRGenerationHandler.handle_text_input,
         UserState.WAITING_WIFI_SSID: TemplatesHandler.handle_wifi_ssid,
@@ -18,12 +17,11 @@ class MessageRouter:
         UserState.WAITING_CONTACT_NAME: TemplatesHandler.handle_contact_name,
         UserState.WAITING_CONTACT_PHONE: TemplatesHandler.handle_contact_phone,
         UserState.WAITING_EMAIL: TemplatesHandler.handle_email_template,
-        UserState.WAITING_URL: TemplatesHandler.handle_url_template
+        UserState.WAITING_URL: TemplatesHandler.handle_url_template,
     }
 
     @staticmethod
     async def route_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Маршрутизує текстове повідомлення до відповідного хендлера на основі стану."""
         state = QRGenerationHandler.get_user_state(context)
         logger.info(f"Routing message in state: {state}")
 

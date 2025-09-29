@@ -1,5 +1,5 @@
-"""Стани користувача для FSM"""
 from enum import Enum
+
 
 class UserState(Enum):
     MAIN_MENU = "main_menu"

@@ -2,13 +2,16 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional, List
 
+
 class UserBase(BaseModel):
     telegram_id: int
     username: Optional[str] = None
     first_name: Optional[str] = None
 
+
 class UserCreate(UserBase):
     pass
+
 
 class User(UserBase):
     id: int
@@ -19,6 +22,7 @@ class User(UserBase):
     class Config:
         from_attributes = True
 
+
 class QRCodeBase(BaseModel):
     text_content: str
     format: str
@@ -26,8 +30,10 @@ class QRCodeBase(BaseModel):
     fg_color: str
     bg_color: str
 
+
 class QRCodeCreate(QRCodeBase):
     user_id: int
+
 
 class QRCode(QRCodeBase):
     id: int
@@ -36,6 +42,7 @@ class QRCode(QRCodeBase):
 
     class Config:
         from_attributes = True
+
 
 class UserStats(BaseModel):
     total_qr_codes: int

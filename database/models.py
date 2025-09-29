@@ -1,27 +1,40 @@
 # У models.py
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, BigInteger  # Додаємо BigInteger
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    Text,
+    Boolean,
+    BigInteger,
+)  # Додаємо BigInteger
 from datetime import datetime
 from config import settings
+
 
 class Base(AsyncAttrs, DeclarativeBase):
     pass
 
+
 class User(Base):
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(BigInteger, unique=True, nullable=False)  # Змінюємо на BigInteger
+    telegram_id = Column(
+        BigInteger, unique=True, nullable=False
+    )  # Змінюємо на BigInteger
     username = Column(String(50), nullable=True)
     first_name = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
     qr_count = Column(Integer, default=0)
 
+
 class QRCode(Base):
     __tablename__ = "qr_codes"
-    
+
     id = Column(Integer, primary_key=True)
     user_id = Column(BigInteger, nullable=False)  # Змінюємо на BigInteger
     text_content = Column(Text, nullable=False)

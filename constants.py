@@ -1,12 +1,7 @@
 """Константи для бота"""
 
 # Дефолтні налаштування QR
-DEFAULT_QR_SETTINGS = {
-    "fmt": "PNG",
-    "size": 10,
-    "fg": "black",
-    "bg": "white"
-}
+DEFAULT_QR_SETTINGS = {"fmt": "PNG", "size": 10, "fg": "black", "bg": "white"}
 
 # Лімити
 MAX_TEXT_LENGTH = 2048

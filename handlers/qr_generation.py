@@ -1,4 +1,4 @@
-# У qr_generation.py
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from handlers.base import BaseHandler
@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 class QRGenerationHandler(BaseHandler):
     @staticmethod
     async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обробка текстового вводу для генерації QR"""
         await QRGenerationHandler.ensure_user_exists(update, context)
         
         text = update.message.text
@@ -28,21 +27,20 @@ class QRGenerationHandler(BaseHandler):
     
     @staticmethod
     async def _process_qr_generation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-        """Процес генерації QR коду"""
         logger.info(f"Starting QR generation for text: {text[:50]}...")
         
-        # Валідація
+        
         is_valid, error_msg = TextValidator.validate_qr_text(text)
         if not is_valid:
             logger.warning(f"Text validation failed: {error_msg}")
             await update.message.reply_text(f"❌ {error_msg}")
             return
         
-        # Показуємо процес
+        
         processing_msg = await update.message.reply_text("🔄 Генерую QR код...")
         
         try:
-            # Генерація
+            
             settings = context.user_data.get("qr_settings", {
                 "fmt": "PNG",
                 "size": 10, 
@@ -50,16 +48,16 @@ class QRGenerationHandler(BaseHandler):
                 "bg": "white",
                 "user_id": context.user_data.get("user_id", update.effective_user.id),
                 "http_session": context.bot_data.get("http_session"),
-                "db_session": context.bot_data.get("db_session")  # Додаємо db_session
+                "db_session": context.bot_data.get("db_session")  
             })
             
             logger.info(f"Generating QR with settings: {settings}")
             qr_result = await QRService.generate_qr_code(text, settings)
             
-            # Видаляємо повідомлення про обробку
+            
             await processing_msg.delete()
             
-            # Відправляємо результат
+            
             if qr_result.format == "PNG":
                 await update.message.reply_photo(
                     photo=qr_result.file, 
@@ -71,17 +69,17 @@ class QRGenerationHandler(BaseHandler):
                     caption=qr_result.caption
                 )
             
-            # Збереження в історію
+            
             user_id = context.user_data.get("user_id", update.effective_user.id)
                 
             async with AsyncSessionLocal() as db_session:
                     settings["db_session"] = db_session
                     await QRService.save_to_history(user_id, text, settings)
             
-            # Повернення в головне меню
+            
             QRGenerationHandler.set_user_state(context, UserState.MAIN_MENU)
             
-            # Показуємо опції
+            
             keyboard = [
                 [InlineKeyboardButton("🔄 Ще один QR", callback_data="action:generate")],
                 [InlineKeyboardButton("🏠 Головне меню", callback_data="action:main")]
@@ -102,7 +100,7 @@ class QRGenerationHandler(BaseHandler):
             except:
                 await update.message.reply_text("❌ Помилка генерації. Спробуйте ще раз.")
             
-            # Показуємо опції після помилки
+            
             keyboard = [
                 [InlineKeyboardButton("🔄 Спробувати ще раз", callback_data="action:generate")],
                 [InlineKeyboardButton("🏠 Головне меню", callback_data="action:main")]
@@ -115,12 +113,11 @@ class QRGenerationHandler(BaseHandler):
     
     @staticmethod
     async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показ головного меню"""
         try:
             from keyboards.inline import InlineKeyboards
             keyboard = InlineKeyboards.main_menu()
         except ImportError:
-            # Fallback клавіатура
+            
             keyboard_buttons = [
                 [InlineKeyboardButton("📱 Генерувати QR", callback_data="action:generate")],
                 [InlineKeyboardButton("🔧 Налаштування", callback_data="action:settings")],
